@@ -144,7 +144,8 @@ Thumbs.db
         print("(This may prompt for authentication)")
         
         try:
-            repo.remotes.origin.push()
+            # Push with upstream tracking
+            repo.remotes.origin.push(u=True)
             print("✓ Successfully pushed to GitHub!")
         except Exception as push_error:
             print(f"\n⚠ Push requires authentication")
