@@ -1,23 +1,36 @@
 #!/usr/bin/env python
 """
-Push Banking Bot to GitHub
+Push Banking Bot to GitHub using Git commands
 Handles git initialization, configuration, and push to remote repository
 """
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
-# Set Git executable path before importing git
-os.environ['GIT_PYTHON_GIT_EXECUTABLE'] = r'C:\Program Files\Git\cmd\git.exe'
-
-from git import Repo, Actor
+def run_git_command(cmd, cwd=None):
+    """Run a git command and return output"""
+    git_exe = r'C:\Program Files\Git\cmd\git.exe'
+    full_cmd = f'"{git_exe}" {cmd}'
+    
+    try:
+        result = subprocess.run(
+            full_cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            shell=True
+        )
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except Exception as e:
+        return -1, "", str(e)
 
 def push_to_github():
     """Push banking bot code to GitHub repository"""
     
     # Configuration
-    repo_path = Path("c:/Users/rajni/Tourism_Bot/banking_bot")
+    repo_path = r"C:\Users\rajni\Tourism_Bot\banking_bot"
     github_url = "https://github.com/rajnishchp/Bankingbot.git"
     username = "rajnishchp"
     email = "rajnishchp@gmail.com"
@@ -27,28 +40,28 @@ def push_to_github():
     print("=" * 70)
     
     try:
-        # Check if repo already exists
-        if (repo_path / ".git").exists():
-            print(f"✓ Git repository already exists at {repo_path}")
-            repo = Repo(repo_path)
-        else:
-            print(f"Creating git repository at {repo_path}...")
-            repo = Repo.init(repo_path)
+        # Initialize repo if needed
+        if not Path(repo_path, ".git").exists():
+            print(f"Initializing git repository at {repo_path}...")
+            code, _, err = run_git_command("init", cwd=repo_path)
+            if code != 0:
+                print(f"✗ Failed to init: {err}")
+                return False
             print("✓ Git repository initialized")
+        else:
+            print(f"✓ Git repository exists at {repo_path}")
         
         # Configure git user
         print(f"\nConfiguring git user:")
         print(f"  Name: {username}")
         print(f"  Email: {email}")
         
-        with repo.config_writer() as git_config:
-            git_config.set_value("user", "name", username)
-            git_config.set_value("user", "email", email)
-        
+        run_git_command(f'config user.name "{username}"', cwd=repo_path)
+        run_git_command(f'config user.email "{email}"', cwd=repo_path)
         print("✓ Git user configured")
         
-        # Create .gitignore
-        gitignore_path = repo_path / ".gitignore"
+        # Create .gitignore if not exists
+        gitignore_path = Path(repo_path) / ".gitignore"
         if not gitignore_path.exists():
             print("\nCreating .gitignore...")
             gitignore_content = """# Python
@@ -75,10 +88,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Virtual Environment
 .venv/
-.venv
 
 # Environment variables
 .env
@@ -103,66 +113,79 @@ Thumbs.db
         
         # Stage all files
         print("\nStaging files...")
-        repo.git.add(A=True)
+        code, out, err = run_git_command("add -A", cwd=repo_path)
+        if code != 0:
+            print(f"✗ Failed to stage: {err}")
+            return False
         print("✓ All files staged")
         
-        # Get status
-        status = repo.git.status()
+        # Check status
+        code, status, _ = run_git_command("status", cwd=repo_path)
         print(f"\nGit Status:\n{status}\n")
         
-        # Check if there are changes to commit
-        if repo.is_dirty() or repo.untracked_files:
-            # Create initial commit
-            print("Creating initial commit...")
-            actor = Actor(username, email)
-            repo.index.commit(
-                "Initial commit: Banking Bot powered by Mistral AI",
-                author=actor,
-                committer=actor
-            )
-            print("✓ Initial commit created")
-        else:
-            print("! No changes to commit")
+        # Create commit
+        code, out, err = run_git_command(
+            'commit -m "Initial commit: Banking Bot powered by Mistral AI"',
+            cwd=repo_path
+        )
         
-        # Check remote
-        remotes = [remote.name for remote in repo.remotes]
+        if code == 0:
+            print("✓ Initial commit created")
+        elif "nothing to commit" in err.lower() or "nothing to commit" in out.lower():
+            print("! No changes to commit")
+        else:
+            print(f"✗ Commit failed: {err}")
+        
+        # Check if remote exists
+        code, remotes, _ = run_git_command("remote -v", cwd=repo_path)
         
         if "origin" in remotes:
-            print(f"\n✓ Remote 'origin' already configured: {repo.remote('origin').url}")
-            # Update remote URL if different
-            if repo.remote('origin').url != github_url:
-                print(f"Updating remote URL to: {github_url}")
-                repo.delete_remote("origin")
-                repo.create_remote("origin", github_url)
+            print(f"\n✓ Remote 'origin' already configured")
         else:
             print(f"\nAdding remote repository: {github_url}")
-            repo.create_remote("origin", github_url)
+            code, _, err = run_git_command(f'remote add origin "{github_url}"', cwd=repo_path)
+            if code != 0:
+                print(f"✗ Failed to add remote: {err}")
+                return False
             print("✓ Remote 'origin' created")
         
         # Push to GitHub
-        print("\nPushing to GitHub...")
-        print("(This may prompt for authentication)")
+        print("\nAttempting to push to GitHub...")
+        print("Note: You'll need to authenticate with GitHub\n")
         
-        try:
-            # Push with upstream tracking
-            repo.remotes.origin.push(u=True)
+        # Try pushing with master branch
+        code, out, err = run_git_command("push -u origin master", cwd=repo_path)
+        
+        if code == 0:
             print("✓ Successfully pushed to GitHub!")
-        except Exception as push_error:
-            print(f"\n⚠ Push requires authentication")
-            print(f"Error: {push_error}")
-            print("\nTo authenticate, you can:")
-            print("1. Use a Personal Access Token (PAT):")
-            print(f"   URL: https://<token>@github.com/rajnishchp/Bankingbot.git")
-            print("\n2. Use SSH:")
-            print("   - Set up SSH keys: https://docs.github.com/en/authentication/connecting-to-github-with-ssh")
-            print("   - Change remote: git remote set-url origin git@github.com:rajnishchp/Bankingbot.git")
+        elif "fatal" in err.lower() and "repository not found" in err.lower():
+            print("✗ Repository not found on GitHub")
+            print(f"Please make sure the repository exists at: https://github.com/rajnishchp/Bankingbot")
+            return False
+        elif "fatal" in err.lower() and "could not read" in err.lower():
+            print("✗ Authentication required")
+            print("\nTo push, you have these options:")
+            print("\n1. Using Personal Access Token (Recommended):")
+            print(f"   git remote set-url origin https://<PAT>@github.com/rajnishchp/Bankingbot.git")
+            print(f"   git push -u origin master")
+            print("\n2. Using SSH:")
+            print("   a) Generate SSH key (if not already done):")
+            print("      ssh-keygen -t ed25519 -C 'rajnishchp@gmail.com'")
+            print("   b) Add to GitHub: https://github.com/settings/keys")
+            print(f"   c) git remote set-url origin git@github.com:rajnishchp/Bankingbot.git")
+            print(f"   d) git push -u origin master")
             print("\n3. Use GitHub CLI:")
-            print("   - Install from https://cli.github.com")
-            print("   - Run: gh auth login")
+            print("   a) Download from https://cli.github.com")
+            print("   b) Run: gh auth login")
+            print("   c) Run: git push -u origin master")
+            return False
+        else:
+            print(f"Push error: {err}")
+            print(f"Output: {out}")
             return False
         
         print("\n" + "=" * 70)
-        print("✓ Successfully pushed Banking Bot to GitHub!")
+        print("✓ Banking Bot pushed to GitHub successfully!")
         print("=" * 70)
         print(f"\nRepository: https://github.com/rajnishchp/Bankingbot")
         print(f"Local Path: {repo_path}")
@@ -177,6 +200,5 @@ Thumbs.db
 
 
 if __name__ == "__main__":
-    os.chdir("c:/Users/rajni/Tourism_Bot")
     success = push_to_github()
     sys.exit(0 if success else 1)
